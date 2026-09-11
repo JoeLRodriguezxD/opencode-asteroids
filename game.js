@@ -128,18 +128,29 @@ class Asteroid {
     // Parpadeo últimos 2s antes de desaparecer
     if (this.isShootingStar && this.ttl < 2 && Math.floor(this.ttl * 8) % 2 === 0) return;
 
-    // Estela fugaz con glow en dirección opuesta a la velocidad
+    // Estela meteorito: 3 líneas con degradado fuego
     if (this.isShootingStar) {
-      const TRAIL = 0.12;
+      const speed = Math.hypot(this.vx, this.vy) || 1;
+      const dx = this.vx / speed, dy = this.vy / speed; // dirección
+      const px = -dy, py = dx;                          // perpendicular
+      const trails = [
+        { off: 0,  len: 0.22, color: 'rgba(255,220,150,0.9)', w: 2.5 }, // central fuego claro
+        { off: 5,  len: 0.14, color: 'rgba(255,140,26,0.55)', w: 1.5 }, // lateral naranja
+        { off: -5, len: 0.14, color: 'rgba(255,140,26,0.55)', w: 1.5 },
+      ];
       ctx.save();
       ctx.shadowColor = SHOOTING_STAR_COLOR;
       ctx.shadowBlur  = 12;
-      ctx.strokeStyle = 'rgba(255, 140, 26, 0.5)';
-      ctx.lineWidth   = 2;
-      ctx.beginPath();
-      ctx.moveTo(this.x, this.y);
-      ctx.lineTo(this.x - this.vx * TRAIL, this.y - this.vy * TRAIL);
-      ctx.stroke();
+      ctx.lineCap = 'round';
+      for (const t of trails) {
+        ctx.strokeStyle = t.color;
+        ctx.lineWidth   = t.w;
+        ctx.beginPath();
+        ctx.moveTo(this.x + px * t.off, this.y + py * t.off);
+        ctx.lineTo(this.x + px * t.off - dx * speed * t.len,
+                   this.y + py * t.off - dy * speed * t.len);
+        ctx.stroke();
+      }
       ctx.restore();
     }
 

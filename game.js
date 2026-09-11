@@ -1,7 +1,18 @@
 'use strict';
 
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
+let canvas = null;
+let ctx = null;
+if (typeof document !== 'undefined') {
+  canvas = document.getElementById('canvas');
+  if (canvas && typeof canvas.getContext === 'function') {
+    ctx = canvas.getContext('2d');
+  }
+}
+if (!ctx) {
+  // Stub mínimo para Node/tests (sin canvas real). En navegador nunca se usa.
+  const noop = () => {};
+  ctx = new Proxy({}, { get: () => noop, set: () => true });
+}
 const W = 800;
 const H = 600;
 
@@ -9,6 +20,7 @@ const H = 600;
 const keys = {};
 const justPressed = {};
 
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
 window.addEventListener('keydown', e => {
   justPressed[e.code] = !keys[e.code];
   keys[e.code] = true;
@@ -16,6 +28,7 @@ window.addEventListener('keydown', e => {
     e.preventDefault();
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
+}
 
 function pressed(code) {
   const val = justPressed[code];
@@ -605,5 +618,45 @@ function loop(ts) {
   requestAnimationFrame(loop);
 }
 
+// Solo auto-arranque en navegador (con canvas real + rAF). En Node/tests no.
+if (typeof requestAnimationFrame !== 'undefined' && typeof document !== 'undefined' && document.getElementById('canvas')) {
 initGame();
 requestAnimationFrame(loop);
+}
+
+// ── Exports para testing (Node) ───────────────────────────────────────────────
+// En navegador `module` no existe y este bloque no hace nada.
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    W, H,
+    RADII, SPEEDS, POINTS,
+    SHOOTING_STAR_SPEED, SHOOTING_STAR_TTL, SHOOTING_STAR_POINTS,
+    SHOOTING_STAR_COLOR, SHOOTING_STAR_RADIUS,
+    SHOOTING_STAR_MIN_DELAY, SHOOTING_STAR_MAX_DELAY,
+    SPEED_DURATION, SPEED_MULT, POWERUP_DROP_CHANCE, POWERUP_TTL,
+    wrap, dist, rand, randInt,
+    Bullet, Asteroid, Ship, Particle, PowerUp,
+    keys, justPressed, pressed,
+    spawnAsteroids, resetShootingStarTimer, spawnShootingStar,
+    initGame, nextLevel, explode, killShip, update, draw, drawHUD, drawOverlay, loop,
+    get canvas() { return canvas; },
+    get ctx() { return ctx; },
+    __getState() {
+      return { ship, bullets, asteroids, particles, powerups, score, lives, level, state, deadTimer, shootingStarTimer, lastTime };
+    },
+    __setState(patch = {}) {
+      if ('ship' in patch) ship = patch.ship;
+      if ('bullets' in patch) bullets = patch.bullets;
+      if ('asteroids' in patch) asteroids = patch.asteroids;
+      if ('particles' in patch) particles = patch.particles;
+      if ('powerups' in patch) powerups = patch.powerups;
+      if ('score' in patch) score = patch.score;
+      if ('lives' in patch) lives = patch.lives;
+      if ('level' in patch) level = patch.level;
+      if ('state' in patch) state = patch.state;
+      if ('deadTimer' in patch) deadTimer = patch.deadTimer;
+      if ('shootingStarTimer' in patch) shootingStarTimer = patch.shootingStarTimer;
+      if ('lastTime' in patch) lastTime = patch.lastTime;
+    },
+  };
+}

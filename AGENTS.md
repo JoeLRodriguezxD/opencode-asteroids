@@ -1,10 +1,16 @@
 # AGENTS.md
 
-Zero-dependency static game: HTML5 Canvas + vanilla JS. No bundler, package manager, tests, lint, or CI.
+Zero-dependency static game: HTML5 Canvas + vanilla JS. No bundler, runtime deps, lint, or CI beyond test workflow.
 
 ## Run
 
 - `npx serve .` → `http://localhost:3000`, or open `index.html` directly (fixed 800×600 canvas, `game.js` via `<script>` tag).
+
+## Tests
+
+- `npm test` → `node --test "tests/*.test.js"` (Node >= 18, `node:test` + `node:assert`, no deps).
+- `tests/helpers.js` installs `document`/`window` stubs before `require('../game.js')`; never set `requestAnimationFrame` before require or `game.js` auto-starts.
+- `game.js` ends with guarded `module.exports` + `__getState`/`__setState` for tests; keep browser behavior identical (`initGame()` + `rAF` only when DOM + rAF exist).
 
 ## Structure
 

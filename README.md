@@ -43,3 +43,17 @@ Luego visita `http://localhost:3000`.
 - 3 vidas con invencibilidad temporal al reaparecer (parpadeo)
 - Asteroides se parten en fragmentos más pequeños al ser destruidos
 - Partículas de explosión al destruir asteroides
+
+## Tests
+
+Sin dependencias: usa el runner built-in de Node (`node:test` + `node:assert`).
+
+```bash
+npm test
+# equivale a: node --test "tests/*.test.js"
+```
+
+- `tests/unit-fisica.test.js` — `wrap`, `dist`, `Bullet`, clamp `dt<=0.05` en `loop`, `draw`/HUD en español.
+- `tests/unit-entidades.test.js` — `Asteroid`/`split`, `Ship`, `Particle`, `PowerUp`.
+- `tests/integration-statemachine.test.js` — `initGame`/`nextLevel`, `killShip`, disparo, colisiones, estrella fugaz, niveles.
+- Requiere Node >= 18.

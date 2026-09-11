@@ -1,0 +1,13 @@
+{
+  "name": "asteroids",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Clon del clásico Asteroids en HTML5 Canvas + vanilla JS (sin dependencias)",
+  "type": "commonjs",
+  "scripts": {
+    "test": "node --test \"tests/*.test.js\""
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

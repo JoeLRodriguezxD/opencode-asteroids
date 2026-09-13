@@ -210,12 +210,12 @@ describe('Particle', () => {
 });
 
 describe('PowerUp velocidad', () => {
-  it('constantes: 5s, x2, ttl 9, drop 15%', () => {
+  it('constantes: 5s, x2, ttl 9, drop velocidad 7.5%', () => {
     const { game } = loadGameFresh();
     assert.equal(game.SPEED_DURATION, 5);
     assert.equal(game.SPEED_MULT, 2);
     assert.equal(game.POWERUP_TTL, 9);
-    assert.equal(game.POWERUP_DROP_CHANCE, 0.15);
+    assert.equal(game.SPEED_DROP_CHANCE, 0.075);
   });
 
   it('deriva lento (15-35 px/s) y envuelve', () => {

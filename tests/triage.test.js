@@ -68,7 +68,7 @@ describe('triage: preservación del original', () => {
 });
 
 describe('triage: plantilla y contexto', () => {
-  it('incluye Resumen/Contexto/Siguiente paso + metadata', () => {
+  it('incluye Resumen/Info/Descripción/Original/Contexto/Siguiente paso + metadata', () => {
     const body = triage.buildBody({
       title: 'Mi bug',
       originalBody: 'no funciona nada, error grave en game.js',
@@ -77,7 +77,7 @@ describe('triage: plantilla y contexto', () => {
       ref: 'acme/asteroids#42',
       sha: 'main@deadbee',
     });
-    for (const section of ['### Resumen', '### Contenido original', '### Contexto', '### Siguiente paso']) {
+    for (const section of ['### Resumen', '### Información relevante', '### Descripción', '### Contenido original', '### Contexto', '### Siguiente paso']) {
       assert.ok(body.includes(section), `falta ${section}`);
     }
     assert.ok(body.includes('@ana'));
@@ -85,6 +85,38 @@ describe('triage: plantilla y contexto', () => {
     assert.ok(body.includes('main@deadbee'));
     assert.ok(body.includes('game.js'));
     assert.ok(body.includes('Tipo detectado: **Bug**'));
+  });
+
+  it('respeta el orden Resumen < Info < Descripción < Original < Contexto < Siguiente', () => {
+    const body = triage.buildBody({ title: 'Fallo', originalBody: 'no dispara la nave' });
+    const idx = (s) => body.indexOf(s);
+    const order = ['### Resumen', '### Información relevante', '### Descripción', '### Contenido original', '### Contexto', '### Siguiente paso'];
+    for (let i = 1; i < order.length; i++) {
+      assert.ok(idx(order[i - 1]) !== -1 && idx(order[i]) !== -1, `falta ${order[i]}`);
+      assert.ok(idx(order[i - 1]) < idx(order[i]), `${order[i - 1]} debe ir antes que ${order[i]}`);
+    }
+  });
+
+  it('Resumen trae tipo + resumen breve de lo pedido', () => {
+    const body = triage.buildBody({ title: 'No dispara', originalBody: 'Al pulsar Espacio la nave no dispara en Chrome.' });
+    assert.ok(body.includes('Resumen: No dispara.'));
+    assert.ok(body.includes('Al pulsar Espacio'));
+  });
+
+  it('Información relevante trae bullets + riesgos', () => {
+    const body = triage.buildBody({ title: 'Crash al iniciar', originalBody: 'pantalla en blanco al abrir index.html' });
+    for (const bullet of ['- Tipo:', '- Área probable:', '- Alcance:', '- Severidad aparente:', '- Riesgos:']) {
+      assert.ok(body.includes(bullet), `falta ${bullet}`);
+    }
+    assert.ok(body.includes('alta'));
+  });
+
+  it('Descripción es síntesis autogenerada sin tocar el original', () => {
+    const original = 'Al pulsar Espacio la nave no dispara\nSegundo párrafo intacto.';
+    const body = triage.buildBody({ title: 'No dispara', originalBody: original });
+    assert.ok(body.includes('### Descripción'));
+    assert.ok(body.includes('No dispara. Al pulsar Espacio la nave no dispara'));
+    assert.ok(body.includes(original));
   });
 });
 

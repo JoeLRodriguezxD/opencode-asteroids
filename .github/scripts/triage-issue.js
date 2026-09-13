@@ -16,6 +16,16 @@ const ENHANCEMENT_PATTERN = /mejora|feature|nuevo|nueva|a[nñ]adir|agregar|sugie
 const QUESTION_PATTERN = /\?|pregunta|duda|c[óo]mo|ayuda|no entiendo|por qu[eé]/;
 // Pistas de que un bug trae info suficiente para reproducirlo.
 const REPRO_PATTERN = /pasos|reproduc|esperado|actual|navegador|chrome|firefox|edge|safari|versi[oó]n|consola|stack|trace|evidencia|adjunto|screenshot|video/;
+const AREA_RULES = [
+  ['nave', /nave|ship|dispar|bala|bullet|thrust|rotaci[oó]n|colisi[oó]n|choque|invencib|escudo|respawn/],
+  ['asteroides', /asteroide|fragmento|split|grande|mediano|peque[ñn]o|fugaz|estrella/],
+  ['power-up', /power-?up|velocidad|triple|orbe|drop/],
+  ['skins', /skin|cl[aá]sica|interceptor|caza|orca|tit[aá]n|morada|nave.*color|estela/],
+  ['HUD-nivel', /hud|puntaje|score|nivel|level|vidas|game over|overlay|roster/],
+  ['tests', /test|npm test|node:test|workflow|ci|agentes/],
+];
+const SEVERITY_HIGH_PATTERN = /crash|pantalla en blanco|se congela|no inicia|no carga|no abre/;
+const SEVERITY_MID_PATTERN = /no funciona|no dispara|no colisiona|rompe|fallo|falla|error/;
 
 function normalize(text) {
   return (text || '').toLowerCase();
@@ -51,18 +61,118 @@ function needsMoreInfo(labels, body) {
   return !REPRO_PATTERN.test(text);
 }
 
+function collapse(text) {
+  return (text || '').replace(/\s+/g, ' ').trim();
+}
+
+function truncate(text, max) {
+  const t = collapse(text);
+  if (t.length <= max) return t;
+  return t.slice(0, max - 1).trimEnd() + '…';
+}
+
+function firstMeaningfulLine(body) {
+  const lines = (body || '').split(/\r?\n/);
+  for (const line of lines) {
+    const t = collapse(line).replace(/^#+\s*/, '');
+    if (t) return t;
+  }
+  return '';
+}
+
+// Resumen breve de lo que se pide (solo lectura del título + cuerpo).
+function summarizeRequest(title, body, max = 200) {
+  const t = collapse(title);
+  const first = firstMeaningfulLine(body);
+  if (!t && !first) return '_(sin contenido para resumir)_';
+  if (!t) return truncate(first, max);
+  if (!first || normalize(first) === normalize(t)) return truncate(t, max);
+  return truncate(`${t}. ${first}`, max);
+}
+
+// Síntesis autogenerada para ### Descripción (no modifica el original).
+function buildDescription(title, body, max = 280) {
+  const t = collapse(title);
+  const first = firstMeaningfulLine(body);
+  if (!t && !first) return '_(sin descripción)_';
+  if (!t) return truncate(first, max);
+  if (!first) return truncate(t, max);
+  if (normalize(first) === normalize(t)) return truncate(t, max);
+  return truncate(`${t}. ${first}`, max);
+}
+
+function detectArea(title, body) {
+  const text = normalize(title) + '\n' + normalize(body);
+  for (const [area, re] of AREA_RULES) {
+    if (re.test(text)) return area;
+  }
+  return 'general';
+}
+
+function detectSeverity(title, body) {
+  const text = normalize(title) + '\n' + normalize(body);
+  if (SEVERITY_HIGH_PATTERN.test(text)) return 'alta';
+  if (SEVERITY_MID_PATTERN.test(text)) return 'media';
+  return 'por revisar';
+}
+
+// Riesgos como una línea (puede combinar varios, separados por '; ').
+function detectRisks({ labels, area, body }) {
+  const risks = [];
+  if (/nave|asteroides|power-up/.test(area)) {
+    risks.push('toca física/colisiones/wrap: riesgo de romper niveles, respawn y drops');
+  }
+  if (area === 'skins') {
+    risks.push('toca skins: riesgo en HUD/persistencia y doble puntos de TITÁN');
+  }
+  if (area === 'HUD-nivel') {
+    risks.push('toca HUD/niveles: riesgo en textos en español y avance de nivel');
+  }
+  if (needsMoreInfo(labels, body)) {
+    risks.push('falta info de reproducción: riesgo de no reproducible');
+  }
+  if (risks.length === 0) return 'bajo/desconocido con la info actual';
+  return risks.join('; ');
+}
+
+function buildRelevantInfo(title, body) {
+  const labels = classifyLabels(title, body);
+  const type = humanType(labels);
+  const area = detectArea(title, body);
+  const alcance = type;
+  const severidad = detectSeverity(title, body);
+  const riesgos = detectRisks({ labels, area, body });
+  return { tipo: type, area, alcance, severidad, riesgos };
+}
+
 // Construye el body formateado preservando el original verbatim (sin modificar).
+// Orden: Resumen / Información relevante / Descripción / Contenido original / Contexto / Siguiente paso.
 function buildBody({ title, originalBody, author, createdAt, ref, sha }) {
-  const safeTitle = title || '(sin título)';
+  const safeTitle = collapse(title) || '(sin título)';
   const hasOriginal = originalBody && originalBody.trim().length > 0;
   const original = hasOriginal ? originalBody : '_(sin descripción)_';
-  const type = humanType(classifyLabels(title, originalBody));
+  const labels = classifyLabels(title, originalBody);
+  const type = humanType(labels);
+  const summary = summarizeRequest(title, originalBody);
+  const info = buildRelevantInfo(title, originalBody);
+  const description = buildDescription(title, originalBody);
   const lines = [
     TRIAGE_MARKER,
     `## ${safeTitle}`,
     '',
     '### Resumen',
     `Tipo detectado: **${type}**.`,
+    `Resumen: ${summary}`,
+    '',
+    '### Información relevante',
+    `- Tipo: ${info.tipo}`,
+    `- Área probable: ${info.area}`,
+    `- Alcance: ${info.alcance}`,
+    `- Severidad aparente: ${info.severidad}`,
+    `- Riesgos: ${info.riesgos}`,
+    '',
+    '### Descripción',
+    description,
     '',
     '### Contenido original',
     '_Texto original del autor, sin modificar:_',
@@ -107,6 +217,12 @@ module.exports = {
   isTriaged,
   humanType,
   needsMoreInfo,
+  summarizeRequest,
+  buildDescription,
+  detectArea,
+  detectSeverity,
+  detectRisks,
+  buildRelevantInfo,
   buildBody,
   buildFollowUpComment,
 };

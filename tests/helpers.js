@@ -81,7 +81,7 @@ function mockDateNow(value) {
   return () => { Date.now = original; };
 }
 
-// Coloca la nave en un estado conocido y seguro (centro, sin thrust).
+// Coloca la nave en un estado conocido y seguro (centro, sin thrust, skin clásica).
 function resetShipSafe(game, { x = 400, y = 300, invincible = 0 } = {}) {
   const s = game.__getState().ship;
   s.x = x;
@@ -94,6 +94,9 @@ function resetShipSafe(game, { x = 400, y = 300, invincible = 0 } = {}) {
   s.shootCooldown = 0;
   s.speedTime = 0;
   s.thrusting = false;
+  // Skin determinista: los tests de skins fijan la suya explícitamente.
+  game.__setState({ currentSkin: 'clasica' });
+  s.skin = 'clasica';
   return s;
 }
 

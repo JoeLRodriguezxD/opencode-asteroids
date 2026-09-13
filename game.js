@@ -44,7 +44,7 @@ const randInt = (min, max) => Math.floor(rand(min, max + 1));
 
 // ── Bullet ────────────────────────────────────────────────────────────────────
 class Bullet {
-  constructor(x, y, angle) {
+  constructor(x, y, angle, color = '#fff') {
     this.x = x;
     this.y = y;
     const SPEED = 520;
@@ -52,6 +52,7 @@ class Bullet {
     this.vy = Math.sin(angle) * SPEED;
     this.ttl  = 1.1;
     this.radius = 2;
+    this.color = color; // color de la nave al disparar (congelado)
     this.dead = false;
   }
 
@@ -63,7 +64,7 @@ class Bullet {
   }
 
   draw() {
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = this.color || '#fff';
     ctx.beginPath();
     ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
     ctx.fill();
@@ -187,6 +188,19 @@ class Asteroid {
   }
 }
 
+// ── Skins de nave ─────────────────────────────────────────────────────────────
+// Cada skin define color + estela + variante de silueta (teclas Digit1-4).
+// La física (radius=12, NOSE=21) es idéntica para todas.
+const SHIP_SKINS = [
+  { id: 'clasica',     name: 'CLÁSICA',     color: '#ffffff', flame: 'rgba(255, 130, 0, 0.85)' },
+  { id: 'interceptor', name: 'INTERCEPTOR', color: '#4dd2ff', flame: 'rgba(77, 210, 255, 0.9)' },
+  { id: 'caza',        name: 'CAZA',        color: '#ffa500', flame: 'rgba(255, 165, 0, 0.9)' },
+  { id: 'orca',        name: 'ORCA',        color: '#7cfc00', flame: 'rgba(124, 252, 0, 0.9)' },
+];
+const DEFAULT_SKIN = 'clasica';
+const SKIN_STORAGE_KEY = 'asteroids-ship-skin';
+let currentSkin = DEFAULT_SKIN;
+
 // ── Ship ──────────────────────────────────────────────────────────────────────
 class Ship {
   constructor() { this.reset(); }
@@ -203,6 +217,7 @@ class Ship {
     this.shootCooldown = 0;
     this.speedTime     = 0;
     this.dead          = false;
+    this.skin          = currentSkin;
   }
 
   update(dt) {
@@ -237,7 +252,7 @@ class Ship {
     const NOSE = 21;
     const ox = this.x + Math.cos(this.angle) * NOSE;
     const oy = this.y + Math.sin(this.angle) * NOSE;
-    return [new Bullet(ox, oy, this.angle)];
+    return [new Bullet(ox, oy, this.angle, getSkin(this.skin).color)];
   }
 
   draw() {
@@ -245,30 +260,27 @@ class Ship {
     // Parpadeo durante invencibilidad de reaparición
     if (this.invincible > 0 && Math.floor(this.invincible * 8) % 2 === 0) return;
 
+    const skin = getSkin(this.skin);
+    const boosted = this.speedTime > 0;
+
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.rotate(this.angle);
-    ctx.strokeStyle = this.speedTime > 0 ? '#0ff' : '#fff';
+    ctx.strokeStyle = boosted ? '#0ff' : skin.color;
     ctx.lineWidth   = 1.5;
     ctx.lineJoin    = 'round';
 
-    // Silueta clásica: triángulo con muesca trasera
-    ctx.beginPath();
-    ctx.moveTo( 20,  0);   // nariz
-    ctx.lineTo(-12, -9);   // ala izquierda
-    ctx.lineTo( -7,  0);   // muesca trasera
-    ctx.lineTo(-12,  9);   // ala derecha
-    ctx.closePath();
+    // Silueta según la skin (misma física para todas: radius 12, NOSE 21)
+    shipPath(skin.id);
     ctx.stroke();
 
-    // Llama del propulsor
+    // Llama del propulsor (color propio de cada skin, cian con velocidad x2)
     if (this.thrusting && Math.random() > 0.35) {
-      const boosted = this.speedTime > 0;
       ctx.beginPath();
       ctx.moveTo(-8, -4);
       ctx.lineTo(-8 - rand(6, boosted ? 28 : 14), 0);
       ctx.lineTo(-8,  4);
-      ctx.strokeStyle = boosted ? 'rgba(0, 255, 255, 0.9)' : 'rgba(255, 130, 0, 0.85)';
+      ctx.strokeStyle = boosted ? 'rgba(0, 255, 255, 0.9)' : skin.flame;
       ctx.stroke();
     }
 
@@ -375,6 +387,85 @@ let state;      // 'playing' | 'dead' | 'gameover'
 let deadTimer;
 let shootingStarTimer;
 
+// ── Skins: helpers ────────────────────────────────────────────────────────────
+function getSkin(id) {
+  return SHIP_SKINS.find(s => s.id === id) || SHIP_SKINS[0];
+}
+
+function getShipSkin() {
+  return currentSkin;
+}
+
+// Lee la skin persistida (no-op seguro en Node/tests sin localStorage).
+function loadSkin() {
+  try {
+    if (typeof localStorage === 'undefined') return currentSkin;
+    const saved = localStorage.getItem(SKIN_STORAGE_KEY);
+    if (saved && SHIP_SKINS.some(s => s.id === saved)) currentSkin = saved;
+  } catch (_) { /* almacenamiento no disponible: se queda la actual */ }
+  return currentSkin;
+}
+
+function saveSkin() {
+  try {
+    if (typeof localStorage !== 'undefined')
+      localStorage.setItem(SKIN_STORAGE_KEY, currentSkin);
+  } catch (_) { /* modo privado / sin almacenamiento: se ignora */ }
+}
+
+// Cambia la skin actual (+ nave viva) y la persiste. Retorna false si id inválido.
+function setShipSkin(id) {
+  if (!SHIP_SKINS.some(s => s.id === id)) return false;
+  currentSkin = id;
+  if (typeof ship !== 'undefined' && ship) ship.skin = id;
+  saveSkin();
+  return true;
+}
+
+// Teclas Digit1-4 → selección directa de skin. Se consume vía pressed() (one-shot).
+function checkSkinInput() {
+  for (let i = 0; i < SHIP_SKINS.length; i++) {
+    if (pressed('Digit' + (i + 1))) setShipSkin(SHIP_SKINS[i].id);
+  }
+}
+
+// Traza la silueta de la nave según la variante (solo moveTo/lineTo/closePath).
+// El ctx ya debe estar trasladado y rotado; no hace stroke ni restore.
+function shipPath(variant) {
+  ctx.beginPath();
+  switch (variant) {
+    case 'interceptor': // cometa/diamante: la única con cola en punta (sin muesca)
+      ctx.moveTo( 22,  0);   // nariz larga
+      ctx.lineTo(  0, -6);   // flanco superior
+      ctx.lineTo(-12,  0);   // cola en punta
+      ctx.lineTo(  0,  6);   // flanco inferior
+      break;
+    case 'caza': // doble ala en X: la única con puntas barridas
+      ctx.moveTo( 19,   0);  // nariz
+      ctx.lineTo(-13, -12);  // punta ala superior
+      ctx.lineTo( -7,  -3);  // quilla superior
+      ctx.lineTo( -7,   3);  // quilla inferior
+      ctx.lineTo(-13,  12);  // punta ala inferior
+      break;
+    case 'orca': // casco voluminoso de 8 puntos: la única "gorda"
+      ctx.moveTo( 18,   0);  // nariz
+      ctx.lineTo(  6,  -9);  // hombro superior
+      ctx.lineTo( -6, -10);  // lomo superior
+      ctx.lineTo(-12,  -4);  // aleta superior
+      ctx.lineTo( -9,   0);  // muesca trasera
+      ctx.lineTo(-12,   4);  // aleta inferior
+      ctx.lineTo( -6,  10);  // lomo inferior
+      ctx.lineTo(  6,   9);  // hombro inferior
+      break;
+    default: // 'clasica': triángulo con muesca trasera
+      ctx.moveTo( 20,  0);   // nariz
+      ctx.lineTo(-12, -9);   // ala izquierda
+      ctx.lineTo( -7,  0);   // muesca trasera
+      ctx.lineTo(-12,  9);   // ala derecha
+  }
+  ctx.closePath();
+}
+
 function spawnAsteroids(count) {
   const SAFE_DIST = 130;
   for (let i = 0; i < count; i++) {
@@ -403,6 +494,7 @@ function spawnShootingStar() {
 }
 
 function initGame() {
+  loadSkin();
   ship          = new Ship();
   bullets   = [];
   asteroids = [];
@@ -445,6 +537,7 @@ function killShip() {
 // ── Update ────────────────────────────────────────────────────────────────────
 function update(dt) {
   if (state === 'gameover') {
+    checkSkinInput();
     if (pressed('Space')) initGame();
     particles.forEach(p => p.update(dt));
     particles = particles.filter(p => !p.dead);
@@ -464,6 +557,7 @@ function update(dt) {
   }
 
   // Disparar
+  checkSkinInput();
   if (pressed('Space')) {
     bullets.push(...ship.tryShoot());
   }
@@ -531,19 +625,16 @@ function update(dt) {
 }
 
 // ── Draw ──────────────────────────────────────────────────────────────────────
-function drawLifeIcon(x, y) {
+function drawLifeIcon(x, y, skinId) {
+  const skin = getSkin(typeof skinId !== 'undefined' ? skinId : currentSkin);
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(-Math.PI / 2);
-  ctx.strokeStyle = '#fff';
-  ctx.lineWidth   = 1.2;
+  ctx.scale(0.5, 0.5); // mini-versión de la silueta real
+  ctx.strokeStyle = skin.color;
+  ctx.lineWidth   = 2.4; // ≈1.2 efectivo tras la escala
   ctx.lineJoin    = 'round';
-  ctx.beginPath();
-  ctx.moveTo( 9,  0);
-  ctx.lineTo(-6, -5);
-  ctx.lineTo(-3,  0);
-  ctx.lineTo(-6,  5);
-  ctx.closePath();
+  shipPath(skin.id);
   ctx.stroke();
   ctx.restore();
 }
@@ -560,6 +651,15 @@ function drawHUD() {
 
   for (let i = 0; i < lives; i++)
     drawLifeIcon(W - 16 - i * 22, 18);
+
+  // Roster de naves abajo a la izquierda: número + nombre, cada una en su color
+  ctx.textAlign = 'left';
+  ctx.font = '13px monospace';
+  SHIP_SKINS.forEach((s, i) => {
+    const y = H - 14 - (SHIP_SKINS.length - 1 - i) * 16;
+    ctx.fillStyle = s.color;
+    ctx.fillText(`${currentSkin === s.id ? '►' : ' '} ${i + 1} ${s.name}`, 14, y);
+  });
 
   // Indicador de power-up Velocidad: texto numérico + barra
   if (state === 'playing' && ship && ship.speedTime > 0) {
@@ -604,7 +704,7 @@ function draw() {
   drawHUD();
 
   if (state === 'gameover')
-    drawOverlay('GAME OVER', `PUNTAJE: ${score}   —   ESPACIO PARA REINICIAR`);
+    drawOverlay('GAME OVER', `PUNTAJE: ${score}   —   ESPACIO PARA REINICIAR   —   1-4 CAMBIAR NAVE`);
 }
 
 // ── Loop principal ────────────────────────────────────────────────────────────
@@ -634,18 +734,23 @@ if (typeof module !== 'undefined' && module.exports) {
     SHOOTING_STAR_COLOR, SHOOTING_STAR_RADIUS,
     SHOOTING_STAR_MIN_DELAY, SHOOTING_STAR_MAX_DELAY,
     SPEED_DURATION, SPEED_MULT, POWERUP_DROP_CHANCE, POWERUP_TTL,
+    SHIP_SKINS, DEFAULT_SKIN, SKIN_STORAGE_KEY,
+    getSkin, getShipSkin, setShipSkin, loadSkin, saveSkin,
+    checkSkinInput, shipPath,
     wrap, dist, rand, randInt,
     Bullet, Asteroid, Ship, Particle, PowerUp,
     keys, justPressed, pressed,
     spawnAsteroids, resetShootingStarTimer, spawnShootingStar,
-    initGame, nextLevel, explode, killShip, update, draw, drawHUD, drawOverlay, loop,
+    initGame, nextLevel, explode, killShip, update, draw, drawHUD, drawOverlay, drawLifeIcon, loop,
     get canvas() { return canvas; },
     get ctx() { return ctx; },
+    get currentSkin() { return currentSkin; },
     __getState() {
-      return { ship, bullets, asteroids, particles, powerups, score, lives, level, state, deadTimer, shootingStarTimer, lastTime };
+      return { ship, bullets, asteroids, particles, powerups, score, lives, level, state, deadTimer, shootingStarTimer, lastTime, currentSkin };
     },
     __setState(patch = {}) {
-      if ('ship' in patch) ship = patch.ship;
+      const hasShipPatch = 'ship' in patch;
+      if (hasShipPatch) ship = patch.ship;
       if ('bullets' in patch) bullets = patch.bullets;
       if ('asteroids' in patch) asteroids = patch.asteroids;
       if ('particles' in patch) particles = patch.particles;
@@ -657,6 +762,11 @@ if (typeof module !== 'undefined' && module.exports) {
       if ('deadTimer' in patch) deadTimer = patch.deadTimer;
       if ('shootingStarTimer' in patch) shootingStarTimer = patch.shootingStarTimer;
       if ('lastTime' in patch) lastTime = patch.lastTime;
+      if ('currentSkin' in patch) {
+        currentSkin = patch.currentSkin;
+        // Sincroniza la nave viva salvo que el parche traiga su propia nave.
+        if (!hasShipPatch && typeof ship !== 'undefined' && ship) ship.skin = currentSkin;
+      }
     },
   };
 }

@@ -278,6 +278,132 @@ describe('power-up velocidad', () => {
   });
 });
 
+describe('power-up escudo', () => {
+  it('recogerlo activa 8s aunque haya invencibilidad y no toca velocidad', () => {
+    const { game } = freshPlaying();
+    game.__setState({ asteroids: [] });
+    const ship = resetShipSafe(game, { invincible: 3 });
+    ship.x = 400; ship.y = 300;
+    parkAsteroid(game, { x: 50, y: 50, size: 3 });
+    const p = new game.PowerUp(400, 300, 'shield');
+    p.vx = 0; p.vy = 0;
+    game.__setState({ powerups: [p] });
+    game.update(0.016);
+    const s = game.__getState();
+    assert.equal(s.ship.shieldTime, game.SHIELD_DURATION);
+    assert.equal(s.ship.speedTime, 0);
+    assert.equal(s.powerups.length, 0);
+  });
+
+  it('con escudo la colisión destruye el asteroide sin matar (suma puntos y parte)', () => {
+    const { game } = freshPlaying();
+    game.__setState({ asteroids: [], lives: 3, score: 0 });
+    const ship = resetShipSafe(game, { invincible: 0 });
+    ship.x = 400; ship.y = 300;
+    ship.shieldTime = game.SHIELD_DURATION;
+    const a = new game.Asteroid(450, 300, 3);
+    a.x = 450; a.y = 300; a.vx = 0; a.vy = 0;
+    const keeper = new game.Asteroid(50, 50, 3);
+    keeper.x = 50; keeper.y = 50; keeper.vx = 0; keeper.vy = 0;
+    game.__setState({ asteroids: [keeper, a] });
+    const restore = mockRandom(0.99); // evita drops en el split del escudo
+    try {
+      game.update(0.016);
+    } finally {
+      restore();
+    }
+    const s = game.__getState();
+    assert.equal(s.state, 'playing');
+    assert.equal(s.lives, 3);
+    assert.equal(s.score, 20);
+    // keeper + 2 fragmentos del grande destruido por el escudo
+    assert.equal(s.asteroids.length, 3);
+  });
+
+  it('con escudo la estrella fugaz se destruye y da 200 sin matar', () => {
+    const { game } = freshPlaying();
+    game.__setState({ asteroids: [], lives: 3, score: 0, shootingStarTimer: 999 });
+    const ship = resetShipSafe(game, { invincible: 0 });
+    ship.x = 400; ship.y = 300;
+    ship.shieldTime = game.SHIELD_DURATION;
+    const keeper = new game.Asteroid(50, 50, 3);
+    keeper.x = 50; keeper.y = 50; keeper.vx = 0; keeper.vy = 0;
+    const f = new game.Asteroid(400, 300, 1, { shootingStar: true });
+    f.x = 400; f.y = 300; f.vx = 0; f.vy = 0;
+    game.__setState({ asteroids: [keeper, f] });
+    game.update(0.016);
+    const s = game.__getState();
+    assert.equal(s.state, 'playing');
+    assert.equal(s.score, 200);
+    assert.ok(!s.asteroids.some((x) => x.isShootingStar && !x.dead));
+  });
+
+  it('sin escudo (expirado) la colisión vuelve a matar', () => {
+    const { game } = freshPlaying();
+    game.__setState({ asteroids: [], lives: 3 });
+    const ship = resetShipSafe(game, { invincible: 0 });
+    ship.x = 400; ship.y = 300;
+    ship.shieldTime = 0.01;
+    const a = new game.Asteroid(450, 300, 3);
+    a.x = 450; a.y = 300; a.vx = 0; a.vy = 0;
+    const keeper = new game.Asteroid(50, 50, 3);
+    keeper.x = 50; keeper.y = 50; keeper.vx = 0; keeper.vy = 0;
+    game.__setState({ asteroids: [keeper, a] });
+    game.update(0.02); // expira el escudo antes de la colisión
+    assert.equal(game.__getState().state, 'dead');
+  });
+
+  it('el drop reparte escudo 10%, triple 10% y velocidad 15% (un solo roll, total 35%)', () => {
+    // Roll único: <0.10 escudo, <0.20 triple, <0.35 velocidad, si no sin drop.
+    for (const [mock, kind] of [[0, 'shield'], [0.099, 'shield'], [0.10, 'triple'], [0.15, 'triple'], [0.199, 'triple'], [0.20, 'speed'], [0.30, 'speed'], [0.349, 'speed']]) {
+      const { game } = freshPlaying();
+      game.__setState({ asteroids: [], shootingStarTimer: 999 });
+      const restore = mockRandom(mock);
+      try {
+        const keeper = new game.Asteroid(50, 50, 3);
+        keeper.x = 50; keeper.y = 50; keeper.vx = 0; keeper.vy = 0;
+        const target = new game.Asteroid(200, 200, 3);
+        target.x = 200; target.y = 200; target.vx = 0; target.vy = 0;
+        const b = new game.Bullet(200, 200, 0);
+        b.vx = 0; b.vy = 0;
+        game.__setState({ asteroids: [keeper, target], bullets: [b], powerups: [] });
+        game.update(0.001);
+        assert.equal(game.__getState().powerups[0].kind, kind, `mock=${mock}`);
+      } finally {
+        restore();
+      }
+    }
+    // Fuera del total 35% no hay drop.
+    for (const mock of [0.35, 0.5]) {
+      const { game } = freshPlaying();
+      game.__setState({ asteroids: [], shootingStarTimer: 999 });
+      const restore = mockRandom(mock);
+      try {
+        const keeper = new game.Asteroid(50, 50, 3);
+        keeper.x = 50; keeper.y = 50; keeper.vx = 0; keeper.vy = 0;
+        const target = new game.Asteroid(200, 200, 3);
+        target.x = 200; target.y = 200; target.vx = 0; target.vy = 0;
+        const b = new game.Bullet(200, 200, 0);
+        b.vx = 0; b.vy = 0;
+        game.__setState({ asteroids: [keeper, target], bullets: [b], powerups: [] });
+        game.update(0.001);
+        assert.equal(game.__getState().powerups.length, 0, `mock=${mock} sin drop`);
+      } finally {
+        restore();
+      }
+    }
+  });
+
+  it('nextLevel resetea el escudo', () => {
+    const { game } = loadGameFresh();
+    game.initGame();
+    game.__getState().ship.shieldTime = game.SHIELD_DURATION;
+    game.__setState({ asteroids: [] });
+    game.nextLevel();
+    assert.equal(game.__getState().ship.shieldTime, 0);
+  });
+});
+
 describe('estrella fugaz por timer', () => {
   it('al expirar el timer aparece (máx 1) y el timer se reinicia a [7,12]', () => {
     const { game } = freshPlaying();

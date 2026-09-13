@@ -227,14 +227,14 @@ describe('Recoger orbe triple', () => {
   });
 });
 
-describe('Drop diferenciado: triple 10%, velocidad 7.5%', () => {
+describe('Drop diferenciado: escudo 10%, triple 10%, velocidad 15% (total 35%)', () => {
   it('constante de drop triple 10%', () => {
     const { game } = loadGameFresh();
     assert.equal(game.TRIPLE_DROP_CHANCE, 0.10);
   });
 
-  it('mock 0.05/0.09 → triple; mock 0.1/0.12 → velocidad; mock 0.2/0.99 → nada', () => {
-    for (const [rnd, expected] of [[0.05, 'triple'], [0.09, 'triple'], [0.1, 'speed'], [0.12, 'speed']]) {
+  it('mock 0.02/0.09 → shield; mock 0.1/0.15 → triple; mock 0.2/0.3 → velocidad; mock 0.4/0.99 → nada', () => {
+    for (const [rnd, expected] of [[0.02, 'shield'], [0.09, 'shield'], [0.1, 'triple'], [0.15, 'triple'], [0.2, 'speed'], [0.3, 'speed']]) {
       const { game } = freshPlaying();
       game.__setState({ asteroids: [], shootingStarTimer: 999 });
       const restore = mockRandom(rnd);
@@ -254,7 +254,7 @@ describe('Drop diferenciado: triple 10%, velocidad 7.5%', () => {
         restore();
       }
     }
-    for (const rnd of [0.2, 0.99]) {
+    for (const rnd of [0.4, 0.99]) {
       const { game } = freshPlaying();
       game.__setState({ asteroids: [], shootingStarTimer: 999 });
       const restore = mockRandom(rnd);

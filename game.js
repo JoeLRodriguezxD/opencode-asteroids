@@ -795,16 +795,27 @@ function drawHUD() {
     ctx.strokeRect(bx, by, bw, bh);
   }
 
-  // Indicador de escudo: texto simple (sin barra), apilado bajo velocidad+triple
+  // Indicador de escudo: texto + barra, apilado bajo velocidad+triple
   if (state === 'playing' && ship && ship.shieldTime > 0) {
     const remaining = Math.max(0, ship.shieldTime);
     const hasSpeed = ship.speedTime > 0;
     const hasTriple = ship.tripleTime > 0;
     const y = (hasSpeed && hasTriple) ? 108 : (hasSpeed || hasTriple) ? 78 : 48;
+    const by = y + 8;
+    const progress = Math.min(1, remaining / SHIELD_DURATION);
     ctx.textAlign = 'left';
     ctx.fillStyle = SHIELD_COLOR;
     ctx.font = '15px monospace';
     ctx.fillText(`ESCUDO  ${remaining.toFixed(1)}s`, 14, y);
+
+    const bw = 120, bh = 8, bx = 14;
+    ctx.fillStyle = 'rgba(77,166,255,0.2)';
+    ctx.fillRect(bx, by, bw, bh);
+    ctx.fillStyle = SHIELD_COLOR;
+    ctx.fillRect(bx, by, bw * progress, bh);
+    ctx.strokeStyle = 'rgba(77,166,255,0.6)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(bx, by, bw, bh);
   }
 
 }

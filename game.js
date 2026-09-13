@@ -189,16 +189,20 @@ class Asteroid {
 }
 
 // ── Skins de nave ─────────────────────────────────────────────────────────────
-// Cada skin define color + estela + variante de silueta (teclas Digit1-4).
-// La física (radius=12, NOSE=21) es idéntica para todas.
+// Cada skin define color + estela + variante de silueta (teclas Digit1-5).
+// La física base es radius=12, NOSE=21 (escala 1); TITÁN usa escala 2
+// (doble de grande) y otorga doble de puntos (scoreMult 2).
 const SHIP_SKINS = [
-  { id: 'clasica',     name: 'CLÁSICA',     color: '#ffffff', flame: 'rgba(255, 130, 0, 0.85)' },
-  { id: 'interceptor', name: 'INTERCEPTOR', color: '#4dd2ff', flame: 'rgba(77, 210, 255, 0.9)' },
-  { id: 'caza',        name: 'CAZA',        color: '#ffa500', flame: 'rgba(255, 165, 0, 0.9)' },
-  { id: 'orca',        name: 'ORCA',        color: '#7cfc00', flame: 'rgba(124, 252, 0, 0.9)' },
+  { id: 'clasica',     name: 'CLÁSICA',     color: '#ffffff', flame: 'rgba(255, 130, 0, 0.85)', scale: 1, scoreMult: 1 },
+  { id: 'interceptor', name: 'INTERCEPTOR', color: '#4dd2ff', flame: 'rgba(77, 210, 255, 0.9)', scale: 1, scoreMult: 1 },
+  { id: 'caza',        name: 'CAZA',        color: '#ffa500', flame: 'rgba(255, 165, 0, 0.9)', scale: 1, scoreMult: 1 },
+  { id: 'orca',        name: 'ORCA',        color: '#7cfc00', flame: 'rgba(124, 252, 0, 0.9)', scale: 1, scoreMult: 1 },
+  { id: 'titan',       name: 'TITÁN',       color: '#b366ff', flame: 'rgba(179, 102, 255, 0.9)', scale: 2, scoreMult: 2 },
 ];
 const DEFAULT_SKIN = 'clasica';
 const SKIN_STORAGE_KEY = 'asteroids-ship-skin';
+const SHIP_BASE_RADIUS = 12;
+const SHIP_BASE_NOSE = 21;
 let currentSkin = DEFAULT_SKIN;
 
 // ── Ship ──────────────────────────────────────────────────────────────────────
@@ -211,7 +215,8 @@ class Ship {
     this.angle  = -Math.PI / 2;
     this.vx     = 0;
     this.vy     = 0;
-    this.radius = 12;
+    this.skin   = currentSkin;
+    this.radius = SHIP_BASE_RADIUS * getShipScale(this.skin);
     this.thrusting     = false;
     this.invincible    = 3;
     this.shootCooldown = 0;
@@ -219,7 +224,6 @@ class Ship {
     this.tripleTime    = 0;
     this.shieldTime    = 0;
     this.dead          = false;
-    this.skin          = currentSkin;
   }
 
   update(dt) {
@@ -254,7 +258,7 @@ class Ship {
     if (this.shootCooldown > 0 || this.dead) return [];
     this.shootCooldown = 0.2;
     if (this.tripleTime > 0) return this.tryTripleShot();
-    const NOSE = 21;
+    const NOSE = SHIP_BASE_NOSE * getShipScale(this.skin);
     const ox = this.x + Math.cos(this.angle) * NOSE;
     const oy = this.y + Math.sin(this.angle) * NOSE;
     return [new Bullet(ox, oy, this.angle, getSkin(this.skin).color)];
@@ -262,7 +266,7 @@ class Ship {
 
   tryTripleShot() {
     if (this.dead) return [];
-    const NOSE = 21;
+    const NOSE = SHIP_BASE_NOSE * getShipScale(this.skin);
     const ox = this.x + Math.cos(this.angle) * NOSE;
     const oy = this.y + Math.sin(this.angle) * NOSE;
     const color = getSkin(this.skin).color;
@@ -280,15 +284,17 @@ class Ship {
 
     const skin = getSkin(this.skin);
     const boosted = this.speedTime > 0;
+    const scale = getShipScale(skin.id);
 
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.rotate(this.angle);
+    ctx.scale(scale, scale);
     ctx.strokeStyle = this.tripleTime > 0 ? TRIPLE_COLOR : boosted ? '#0ff' : skin.color;
-    ctx.lineWidth   = 1.5;
+    ctx.lineWidth   = 1.5 / scale;
     ctx.lineJoin    = 'round';
 
-    // Silueta según la skin (misma física para todas: radius 12, NOSE 21)
+    // Silueta según la skin (base radius 12, NOSE 21; TITÁN escala x2 vía ctx)
     shipPath(skin.id);
     ctx.stroke();
 
@@ -312,7 +318,7 @@ class Ship {
       ctx.strokeStyle = SHIELD_COLOR;
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(0, 0, SHIELD_RADIUS, 0, Math.PI * 2);
+      ctx.arc(0, 0, SHIELD_RADIUS * scale, 0, Math.PI * 2);
       ctx.stroke();
       ctx.restore();
     }
@@ -466,6 +472,23 @@ function getSkin(id) {
   return SHIP_SKINS.find(s => s.id === id) || SHIP_SKINS[0];
 }
 
+// Escala de tamaño de la nave (1 normal, 2 TITÁN = doble de grande).
+function getShipScale(id) {
+  const s = getSkin(id);
+  return typeof s.scale === 'number' && s.scale > 0 ? s.scale : 1;
+}
+
+// Multiplicador de puntos de la nave (2 con TITÁN = doble de puntos).
+function getScoreMult(id) {
+  const s = getSkin(id);
+  return typeof s.scoreMult === 'number' && s.scoreMult > 0 ? s.scoreMult : 1;
+}
+
+// Suma puntos aplicando el multiplicador de la nave actual (TITÁN x2).
+function addScore(base) {
+  score += base * getScoreMult(typeof ship !== 'undefined' && ship ? ship.skin : currentSkin);
+}
+
 function getShipSkin() {
   return currentSkin;
 }
@@ -491,12 +514,15 @@ function saveSkin() {
 function setShipSkin(id) {
   if (!SHIP_SKINS.some(s => s.id === id)) return false;
   currentSkin = id;
-  if (typeof ship !== 'undefined' && ship) ship.skin = id;
+  if (typeof ship !== 'undefined' && ship) {
+    ship.skin = id;
+    ship.radius = SHIP_BASE_RADIUS * getShipScale(id);
+  }
   saveSkin();
   return true;
 }
 
-// Teclas Digit1-4 → selección directa de skin. Se consume vía pressed() (one-shot).
+// Teclas Digit1-5 → selección directa de skin. Se consume vía pressed() (one-shot).
 function checkSkinInput() {
   for (let i = 0; i < SHIP_SKINS.length; i++) {
     if (pressed('Digit' + (i + 1))) setShipSkin(SHIP_SKINS[i].id);
@@ -530,6 +556,15 @@ function shipPath(variant) {
       ctx.lineTo(-12,   4);  // aleta inferior
       ctx.lineTo( -6,  10);  // lomo inferior
       ctx.lineTo(  6,   9);  // hombro inferior
+      break;
+    case 'titan': // nave pesada morada: única con pods laterales dobles (7 puntos)
+      ctx.moveTo( 20,   0);  // nariz
+      ctx.lineTo(  0,  -6);  // flanco superior
+      ctx.lineTo( -4, -14);  // pod superior
+      ctx.lineTo(-10,  -6);  // quilla superior
+      ctx.lineTo(-10,   6);  // quilla inferior
+      ctx.lineTo( -4,  14);  // pod inferior
+      ctx.lineTo(  0,   6);  // flanco inferior
       break;
     default: // 'clasica': triángulo con muesca trasera
       ctx.moveTo( 20,  0);   // nariz
@@ -661,7 +696,7 @@ function update(dt) {
       if (!a.dead && !b.dead && dist(b, a) < a.radius) {
         b.dead = true;
         a.dead = true;
-        score += a.isShootingStar ? SHOOTING_STAR_POINTS : POINTS[a.size];
+        addScore(a.isShootingStar ? SHOOTING_STAR_POINTS : POINTS[a.size]);
         explode(a.x, a.y, a.size * 5);
         newAsteroids.push(...a.split());
         if (!a.isShootingStar) {
@@ -686,7 +721,7 @@ function update(dt) {
       if (!a.dead && dist(ship, a) < ship.radius + a.radius * 0.82) {
         if (shielded) {
           a.dead = true;
-          score += a.isShootingStar ? SHOOTING_STAR_POINTS : POINTS[a.size];
+          addScore(a.isShootingStar ? SHOOTING_STAR_POINTS : POINTS[a.size]);
           explode(a.x, a.y, a.size * 5);
           shieldKills.push(...a.split());
           // Sin drop de power-up aquí para evitar cadenas.
@@ -721,12 +756,13 @@ function update(dt) {
 // ── Draw ──────────────────────────────────────────────────────────────────────
 function drawLifeIcon(x, y, skinId) {
   const skin = getSkin(typeof skinId !== 'undefined' ? skinId : currentSkin);
+  const scale = getShipScale(skin.id);
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(-Math.PI / 2);
-  ctx.scale(0.5, 0.5); // mini-versión de la silueta real
+  ctx.scale(0.5 * scale, 0.5 * scale); // mini-versión proporcional (TITÁN x2)
   ctx.strokeStyle = skin.color;
-  ctx.lineWidth   = 2.4; // ≈1.2 efectivo tras la escala
+  ctx.lineWidth   = 2.4 / scale; // ≈1.2 efectivo tras la escala
   ctx.lineJoin    = 'round';
   shipPath(skin.id);
   ctx.stroke();
@@ -843,7 +879,7 @@ function draw() {
   drawHUD();
 
   if (state === 'gameover')
-    drawOverlay('GAME OVER', `PUNTAJE: ${score}   —   ESPACIO PARA REINICIAR   —   1-4 CAMBIAR NAVE`);
+    drawOverlay('GAME OVER', `PUNTAJE: ${score}   —   ESPACIO PARA REINICIAR   —   1-${SHIP_SKINS.length} CAMBIAR NAVE`);
 }
 
 // ── Loop principal ────────────────────────────────────────────────────────────
@@ -876,8 +912,8 @@ if (typeof module !== 'undefined' && module.exports) {
     POWERUP_KIND_SPEED, POWERUP_KIND_TRIPLE, POWERUP_KIND_SHIELD,
     TRIPLE_DURATION, TRIPLE_SPREAD, TRIPLE_COLOR,
     SHIELD_DURATION, SHIELD_COLOR, SHIELD_RADIUS,
-    SHIP_SKINS, DEFAULT_SKIN, SKIN_STORAGE_KEY,
-    getSkin, getShipSkin, setShipSkin, loadSkin, saveSkin,
+    SHIP_SKINS, DEFAULT_SKIN, SKIN_STORAGE_KEY, SHIP_BASE_RADIUS, SHIP_BASE_NOSE,
+    getSkin, getShipSkin, setShipSkin, loadSkin, saveSkin, getShipScale, getScoreMult, addScore,
     checkSkinInput, shipPath,
     wrap, dist, rand, randInt,
     Bullet, Asteroid, Ship, Particle, PowerUp,
@@ -907,7 +943,10 @@ if (typeof module !== 'undefined' && module.exports) {
       if ('currentSkin' in patch) {
         currentSkin = patch.currentSkin;
         // Sincroniza la nave viva salvo que el parche traiga su propia nave.
-        if (!hasShipPatch && typeof ship !== 'undefined' && ship) ship.skin = currentSkin;
+        if (!hasShipPatch && typeof ship !== 'undefined' && ship) {
+          ship.skin = currentSkin;
+          ship.radius = SHIP_BASE_RADIUS * getShipScale(currentSkin);
+        }
       }
     },
   };

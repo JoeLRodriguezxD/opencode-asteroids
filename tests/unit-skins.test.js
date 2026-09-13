@@ -1,5 +1,5 @@
 'use strict';
-// Unitarias: sistema de skins de nave (Digit1-4, persistencia, dibujo).
+// Unitarias: sistema de skins de nave (Digit1-5, persistencia, dibujo).
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const { loadGameFresh, resetShipSafe } = require('./helpers');
@@ -35,12 +35,12 @@ function parkKeeper(game) {
 }
 
 describe('SHIP_SKINS', () => {
-  it('4 skins con id/nombre/color/estela únicos', () => {
+  it('5 skins con id/nombre/color/estela únicos', () => {
     const { game } = loadGameFresh();
-    assert.equal(game.SHIP_SKINS.length, 4);
+    assert.equal(game.SHIP_SKINS.length, 5);
     const ids = game.SHIP_SKINS.map((s) => s.id);
-    assert.deepEqual(ids, ['clasica', 'interceptor', 'caza', 'orca']);
-    assert.equal(new Set(ids).size, 4);
+    assert.deepEqual(ids, ['clasica', 'interceptor', 'caza', 'orca', 'titan']);
+    assert.equal(new Set(ids).size, 5);
     for (const s of game.SHIP_SKINS) {
       assert.ok(s.name && s.color && s.flame, `skin ${s.id} incompleta`);
     }
@@ -81,7 +81,7 @@ describe('skin por defecto y setShipSkin()', () => {
   });
 });
 
-describe('selección con teclas Digit1-4', () => {
+describe('selección con teclas Digit1-5', () => {
   it('Digit2 en playing cambia a interceptor sin disparar', () => {
     const { game } = freshPlaying();
     parkKeeper(game);
@@ -174,10 +174,10 @@ describe('siluetas diferenciadas', () => {
     );
   });
 
-  it('las 4 siluetas difieren entre sí', () => {
+  it('las 5 siluetas difieren entre sí', () => {
     const { game, ctx } = loadGameFresh();
     const paths = game.SHIP_SKINS.map((s) => pathOf(game, ctx, s.id));
-    assert.equal(new Set(paths).size, 4, `siluetas duplicadas: ${paths}`);
+    assert.equal(new Set(paths).size, 5, `siluetas duplicadas: ${paths}`);
   });
 });
 
@@ -264,13 +264,13 @@ describe('dibujo por skin', () => {
 });
 
 describe('HUD de skins', () => {
-  it('roster: las 4 naves con número y nombre', () => {
+  it('roster: las 5 naves con número y nombre', () => {
     const { game, ctx } = freshPlaying();
     parkKeeper(game);
     ctx.calls.length = 0;
     game.draw();
     const textos = ctx.calls.filter((c) => c.method === 'fillText').map((c) => String(c.args[0]));
-    for (const [n, name] of [[1, 'CLÁSICA'], [2, 'INTERCEPTOR'], [3, 'CAZA'], [4, 'ORCA']]) {
+    for (const [n, name] of [[1, 'CLÁSICA'], [2, 'INTERCEPTOR'], [3, 'CAZA'], [4, 'ORCA'], [5, 'TITÁN']]) {
       assert.ok(textos.some((t) => t.includes(String(n)) && t.includes(name)), `roster sin ${n} ${name}: ${textos}`);
     }
   });
@@ -290,13 +290,13 @@ describe('HUD de skins', () => {
     assert.ok(!textos.some((t) => t.includes('►') && t.includes('CLÁSICA')), `► duplicado: ${textos}`);
   });
 
-  it('gameover sugiere 1-4 para cambiar de nave', () => {
+  it('gameover sugiere 1-5 para cambiar de nave', () => {
     const { game, ctx } = loadGameFresh();
     game.initGame();
     game.__setState({ state: 'gameover', score: 10 });
     ctx.calls.length = 0;
     game.draw();
     const textos = ctx.calls.filter((c) => c.method === 'fillText').map((c) => String(c.args[0]));
-    assert.ok(textos.some((t) => t.includes('1-4')), `gameover sin 1-4: ${textos}`);
+    assert.ok(textos.some((t) => t.includes('1-5')), `gameover sin 1-5: ${textos}`);
   });
 });

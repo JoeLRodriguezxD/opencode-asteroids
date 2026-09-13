@@ -1,0 +1,88 @@
+name: Issue Triage
+
+on:
+  issues:
+    types: [opened, edited, reopened]
+
+permissions:
+  issues: write
+  contents: read
+
+concurrency:
+  group: issue-triage-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Formatear issue y asignar labels
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const triage = require('./.github/scripts/triage-issue.js');
+            const issue = context.payload.issue;
+            if (!issue) {
+              console.log('Sin issue en el payload, nada que hacer.');
+              return;
+            }
+
+            const { number, title = '', body = '', user, created_at } = issue;
+            const author = (user && user.login) || 'desconocido';
+            const { owner, repo } = context.repo;
+
+            if (triage.isTriaged(body)) {
+              console.log(`Issue #${number} ya formateado (marker presente), se omite.`);
+              return;
+            }
+
+            const labels = triage.classifyLabels(title, body);
+            const shortSha = context.sha.slice(0, 7);
+            const newBody = triage.buildBody({
+              title,
+              originalBody: body || '',
+              author,
+              createdAt: created_at || new Date().toISOString(),
+              ref: `${owner}/${repo}#${number}`,
+              sha: `main@${shortSha}`,
+            });
+
+            // Asegura que los labels existan (triage no es default de GitHub).
+            const wanted = {
+              [triage.LABEL_TRIAGE]: { color: 'FBCA04', description: 'Pendiente de revisión' },
+              [triage.LABEL_BUG]: { color: 'd73a4a', description: 'Algo no funciona' },
+              [triage.LABEL_ENHANCEMENT]: { color: 'a2eeef', description: 'Nueva funcionalidad o mejora' },
+              [triage.LABEL_QUESTION]: { color: 'd876e3', description: 'Pregunta o duda' },
+            };
+            for (const [name, opts] of Object.entries(wanted)) {
+              if (!labels.includes(name)) continue;
+              try {
+                await github.rest.issues.getLabel({ owner, repo, name });
+              } catch (e) {
+                if (e.status === 404) {
+                  console.log(`Label '${name}' no existe, se crea.`);
+                  await github.rest.issues.createLabel({ owner, repo, name, ...opts });
+                } else {
+                  throw e;
+                }
+              }
+            }
+
+            await github.rest.issues.update({ owner, repo, issue_number: number, body: newBody });
+            console.log(`Issue #${number} formateado, original preservado.`);
+
+            await github.rest.issues.addLabels({ owner, repo, issue_number: number, labels });
+            console.log(`Labels en #${number}: ${labels.join(', ')}`);
+
+            if (triage.needsMoreInfo(labels, body)) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: number,
+                body: triage.buildFollowUpComment(labels, author),
+              });
+              console.log(`Comentario de seguimiento creado en #${number}.`);
+            }

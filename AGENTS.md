@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Zero-dependency static game: HTML5 Canvas + vanilla JS. No bundler, runtime deps, lint, or CI beyond test workflow.
+Zero-dependency static game: HTML5 Canvas + vanilla JS. No bundler, runtime deps, lint. CI: test workflow + issue triage (both via actions/* only).
 
 ## Run
 
@@ -9,16 +9,17 @@ Zero-dependency static game: HTML5 Canvas + vanilla JS. No bundler, runtime deps
 ## Tests
 
 - `npm test` → `node --test "tests/*.test.js"` (Node >= 18, `node:test` + `node:assert`, no deps).
-- Suites: `unit-fisica` (`wrap`/`dist`/`Bullet`/clamp `dt`/draw), `unit-entidades` (`Asteroid`/`split`/`Ship`+escudo+triple/`Particle`/`PowerUp` 3 kinds), `unit-skins` (skins: `Digit1-5`/persistencia/dibujo/HUD, TITÁN morada x2 con doble puntos), `integration-statemachine` (`initGame`/`nextLevel`/`killShip`/colisiones/estrella fugaz/niveles/escudo), `triple-shot` (power-up triple: `kind`/`tryShoot` triple/drop 15-10-10/recogida/HUD `TRIPLE x3`).
-- `tests/helpers.js` (`loadGameFresh`/`installDom`/`mockRandom`/`mockDateNow`/`resetShipSafe` con `tripleTime=0`+`shieldTime=0` y `skin='clasica'`) installs `document`/`window` stubs before `require('../game.js')`; never set `requestAnimationFrame` before require or `game.js` auto-starts.
+- Suites: `unit-fisica` (`wrap`/`dist`/`Bullet`/clamp `dt`/draw), `unit-entidades` (`Asteroid`/`split`/`Ship`+escudo+triple/`Particle`/`PowerUp` 3 kinds), `unit-skins` (skins: `Digit1-5`/persistencia/dibujo/HUD, TITÁN morada x2 con doble puntos), `integration-statemachine` (`initGame`/`nextLevel`/`killShip`/colisiones/estrella fugaz/niveles/escudo), `triple-shot` (power-up triple: `kind`/`tryShoot` triple/drop 15-10-10/recogida/HUD `TRIPLE x3`), `triage` (clasificación por keywords ES/EN, plantilla con marker, preservación verbatim, `needsMoreInfo`).
+- `tests/helpers.js` (`loadGameFresh`/`installDom`/`mockRandom`/`mockDateNow`/`resetShipSafe` con `tripleTime=0`+`shieldTime=0` y `skin='clasica'`) installs `document`/`window` stubs before `require('../game.js')`; never set `requestAnimationFrame` before require or `game.js` auto-starts. `tests/triage.test.js` no usa DOM: requiere directo `.github/scripts/triage-issue.js`.
 - `game.js` ends with guarded `module.exports` + `__getState`/`__setState` for tests; keep browser behavior identical (`initGame()` + `rAF` only when DOM + rAF exist).
-- CI: `.github/workflows/test.yml` (push/PR, `setup-node lts/*`, `npm test`).
+- CI: `.github/workflows/test.yml` (push/PR, `setup-node lts/*`, `npm test`) + `.github/workflows/issue-triage.yml` (issues `opened/edited/reopened`, `issues:write` + `contents:read`, `checkout@v4` + `github-script@v7`, auto-crea labels `triage/bug/enhancement/question` si faltan).
 
 ## Structure
 
 - `index.html` — canvas shell + styles only; all logic in `game.js`.
 - `game.js` (`'use strict'`, ~953 lines) — classes `Ship`, `Asteroid`, `Bullet`, `Particle`, `PowerUp` (`PowerUp` con `kind: speed|triple|shield` + `Asteroid` con `opts.shootingStar` para la Estrella Fugaz) + state machine `playing | dead | gameover` (`initGame` / `nextLevel` / `spawnAsteroids` / `spawnShootingStar` / `explode` / `killShip` / `update` / `draw` / `loop`) + skins de nave (`SHIP_SKINS` / `SHIP_BASE_RADIUS` / `SHIP_BASE_NOSE` / `getSkin` / `getShipScale` / `getScoreMult` / `addScore` / `setShipSkin` / `loadSkin` / `saveSkin` / `checkSkinInput` / `shipPath`).
 - Estado: `ship, bullets, asteroids, particles, powerups, score, lives, level, state, deadTimer, shootingStarTimer, currentSkin` (expuesto vía `__getState`/`__setState`; efectos temporales en `ship.speedTime`/`ship.tripleTime`/`ship.shieldTime`).
+- `.github/scripts/triage-issue.js` (`'use strict'`, sin deps, CommonJS): `TRIAGE_MARKER` + `classifyLabels`/`isTriaged`/`humanType`/`needsMoreInfo`/`buildBody`/`buildFollowUpComment` + constantes `LABEL_*`; el workflow lo carga con `require` (por eso necesita `checkout@v4` antes de `github-script`).
 
 ## Gotchas
 
@@ -34,6 +35,7 @@ Zero-dependency static game: HTML5 Canvas + vanilla JS. No bundler, runtime deps
 - Ship tuning: `ROT=3.5, THRUST=260, DRAG=0.987, shootCooldown=0.2`; `Bullet` `SPEED=520, TTL=1.1, radius=2`.
 - Skins de nave (`SHIP_SKINS`: `clasica`/`interceptor`/`caza`/`orca`/`titan`, `DEFAULT_SKIN='clasica'`, `SKIN_STORAGE_KEY='asteroids-ship-skin'`): selección directa con `Digit1-5` vía `checkSkinInput()` (one-shot `pressed()`, en `playing` y `gameover`), color + forma + estela + escala/puntos por skin (`scale`/`scoreMult`: 1/1 en las 4 clásicas, 2/2 en `titan`). Base (`radius=12`, `NOSE=21`, colisión `0.82`); TITÁN doble de grande (`radius=24`, `NOSE=42` vía `getShipScale()`, dibujo con `ctx.scale(2,2)`, escudo `SHIELD_RADIUS*2`, icono de vida proporcional). Siluetas estructuralmente distintas vía `shipPath()`: `clasica` triángulo con muesca, `interceptor` cometa/diamante con cola en punta, `caza` doble ala en X, `orca` casco de 8 puntos, `titan` pesada morada de 7 puntos con pods laterales dobles (color `#b366ff`). `Ship.reset()` fija `ship.skin=currentSkin` + `radius=12*escala`; `setShipSkin()`/`__setState({currentSkin})` sincronizan `radius`; `nextLevel()` y respawn la conservan; solo `initGame()` recarga con `loadSkin()`. Puntos dobles con TITÁN vía `addScore()` (`getScoreMult()`: bala vs asteroide/fugaz y kill por escudo, `POINTS`/`SHOOTING_STAR_POINTS` x2). Persistencia en `localStorage` con `try/catch` (no-op en Node/tests). `Bullet(x, y, angle, color='#fff')` congela el color de la skin al disparar (`tryShoot()` pasa `getSkin(this.skin).color`); con velocidad x2 la nave es cian pero sus balas mantienen el color de la skin. `drawLifeIcon(x, y, skinId)` dibuja mini-silueta (`scale 0.5*escala`) con el color de la skin; con velocidad x2 el trazo sigue cian `#0ff`. HUD muestra el roster abajo a la izquierda (`► N NOMBRE` por skin, cada línea en su color); gameover sugiere `1-5 CAMBIAR NAVE` (dinámico `1-${SHIP_SKINS.length}`).
 - HUD/overlay text is Spanish (`NIVEL`, `PUNTAJE`); keep it.
+- Issue triage: triggers `opened/edited/reopened` con `concurrency` por nº de issue; idempotente vía `TRIAGE_MARKER` (`isTriaged` → no-op si ya formateado); plantilla fija `Resumen / Contenido original (verbatim, sin modificar, `_(sin descripción)_` si vacío) / Contexto (autor, fecha UTC, ref `owner/repo#N`, commit `main@sha7`, archivos clave) / Siguiente paso`; labels `triage` siempre + `bug/enhancement/question` por regex ES/EN sobre título+cuerpo; `needsMoreInfo` solo para `bug` corto (<30 chars) o sin pistas (`pasos/reproduc/esperado/navegador/consola/...`) → comentario de seguimiento mencionando al autor; el workflow auto-crea el label que falte antes de `addLabels`.
 
 ## Maintenance
 

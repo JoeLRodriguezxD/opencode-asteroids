@@ -93,6 +93,7 @@ function resetShipSafe(game, { x = 400, y = 300, invincible = 0 } = {}) {
   s.invincible = invincible;
   s.shootCooldown = 0;
   s.speedTime = 0;
+  s.shieldTime = 0;
   s.thrusting = false;
   return s;
 }

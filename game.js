@@ -202,6 +202,7 @@ class Ship {
     this.invincible    = 3;
     this.shootCooldown = 0;
     this.speedTime     = 0;
+    this.shieldTime    = 0;
     this.dead          = false;
   }
 
@@ -210,6 +211,7 @@ class Ship {
     if (this.invincible    > 0) this.invincible    -= dt;
     if (this.shootCooldown > 0) this.shootCooldown -= dt;
     if (this.speedTime     > 0) this.speedTime     -= dt;
+    if (this.shieldTime    > 0) this.shieldTime    -= dt;
 
     const ROT   = 3.5;   // rad/s
     const THRUST = 260;  // px/s²
@@ -273,6 +275,19 @@ class Ship {
     }
 
     ctx.restore();
+
+    // Anillo del escudo (sin rotar, centrado en la nave).
+    // Parpadea últimos 2s como aviso de expiración (solo el anillo, la nave sigue visible).
+    if (this.shieldTime > 0 && !(this.shieldTime < 2 && Math.floor(this.shieldTime * 8) % 2 === 0)) {
+      ctx.save();
+      ctx.translate(this.x, this.y);
+      ctx.strokeStyle = SHIELD_COLOR;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, SHIELD_RADIUS, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 }
 
@@ -308,16 +323,23 @@ class Particle {
   }
 }
 
-// ── Power-up Velocidad ────────────────────────────────────────────────────────
+// ── Power-ups (Velocidad y Escudo) ────────────────────────────────────────────
 const SPEED_DURATION = 5;    // segundos de efecto
 const SPEED_MULT     = 2;    // multiplicador de empuje
 const POWERUP_DROP_CHANCE = 0.15; // probabilidad al destruir asteroide
 const POWERUP_TTL = 9;       // segundos antes de desaparecer si no se recoge
 
+// ── Escudo ──────────────────────────────────────────────────────────────────
+const SHIELD_DURATION = 8;      // segundos de protección
+const SHIELD_COLOR    = '#4da6ff'; // azul, distinto de cian #0ff y naranja #ff8c1a
+const SHIELD_RADIUS   = 20;     // radio del anillo alrededor de la nave
+const SHIELD_DROP_CHANCE = 0.10; // probabilidad propia, distinta del 15% de velocidad
+
 class PowerUp {
-  constructor(x, y) {
+  constructor(x, y, kind = 'speed') {
     this.x = x;
     this.y = y;
+    this.kind = kind === 'shield' ? 'shield' : 'speed';
     this.radius = 12;
     this.ttl  = POWERUP_TTL;
     this.life = POWERUP_TTL;
@@ -345,24 +367,39 @@ class PowerUp {
     ctx.translate(this.x, this.y);
     ctx.scale(pulse, pulse);
 
-    // Círculo exterior cian
-    ctx.strokeStyle = '#0ff';
+    // Círculo exterior según tipo
+    const color = this.kind === 'shield' ? SHIELD_COLOR : '#0ff';
+    ctx.strokeStyle = color;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Rayo central (símbolo de velocidad)
-    ctx.fillStyle = '#0ff';
-    ctx.beginPath();
-    ctx.moveTo(2, -8);
-    ctx.lineTo(-4, 1);
-    ctx.lineTo(-1, 1);
-    ctx.lineTo(-2, 8);
-    ctx.lineTo(4, -1);
-    ctx.lineTo(1, -1);
-    ctx.closePath();
-    ctx.fill();
+    if (this.kind === 'shield') {
+      // Escudo central (silueta de escudo)
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(0, -8);
+      ctx.lineTo(6, -5);
+      ctx.lineTo(6, 1);
+      ctx.lineTo(0, 8);
+      ctx.lineTo(-6, 1);
+      ctx.lineTo(-6, -5);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      // Rayo central (símbolo de velocidad)
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(2, -8);
+      ctx.lineTo(-4, 1);
+      ctx.lineTo(-1, 1);
+      ctx.lineTo(-2, 8);
+      ctx.lineTo(4, -1);
+      ctx.lineTo(1, -1);
+      ctx.closePath();
+      ctx.fill();
+    }
 
     ctx.restore();
   }
@@ -496,22 +533,38 @@ function update(dt) {
         score += a.isShootingStar ? SHOOTING_STAR_POINTS : POINTS[a.size];
         explode(a.x, a.y, a.size * 5);
         newAsteroids.push(...a.split());
-        if (!a.isShootingStar && Math.random() < POWERUP_DROP_CHANCE)
-          powerups.push(new PowerUp(a.x, a.y));
+        // Un solo roll: 0-10% escudo, 10-25% velocidad (10% + 15% independientes).
+        const roll = a.isShootingStar ? 1 : Math.random();
+        if (roll < SHIELD_DROP_CHANCE)
+          powerups.push(new PowerUp(a.x, a.y, 'shield'));
+        else if (roll < SHIELD_DROP_CHANCE + POWERUP_DROP_CHANCE)
+          powerups.push(new PowerUp(a.x, a.y, 'speed'));
       }
     }
   }
   asteroids = asteroids.filter(a => !a.dead).concat(newAsteroids);
   bullets   = bullets.filter(b => !b.dead);
 
-  // Nave vs asteroide
-  if (ship.invincible <= 0) {
+  // Nave vs asteroide (el escudo destruye el asteroide sin matar la nave)
+  if (ship.invincible <= 0 && !ship.dead) {
+    const shielded = ship.shieldTime > 0;
+    const shieldKills = [];
     for (const a of asteroids) {
-      if (dist(ship, a) < ship.radius + a.radius * 0.82) {
-        killShip();
-        break;
+      if (!a.dead && dist(ship, a) < ship.radius + a.radius * 0.82) {
+        if (shielded) {
+          a.dead = true;
+          score += a.isShootingStar ? SHOOTING_STAR_POINTS : POINTS[a.size];
+          explode(a.x, a.y, a.size * 5);
+          shieldKills.push(...a.split());
+          // Sin drop de power-up aquí para evitar cadenas.
+        } else {
+          killShip();
+          break;
+        }
       }
     }
+    if (shieldKills.length > 0)
+      asteroids = asteroids.filter(a => !a.dead).concat(shieldKills);
   }
 
   // Nave vs power-up (se permite recoger aun con invencibilidad)
@@ -519,7 +572,10 @@ function update(dt) {
     for (const p of powerups) {
       if (!p.dead && dist(ship, p) < ship.radius + p.radius) {
         p.dead = true;
-        ship.speedTime = SPEED_DURATION; // reinicia a 5s si ya estaba activo
+        if (p.kind === 'shield')
+          ship.shieldTime = SHIELD_DURATION; // reinicia a 8s si ya estaba activo
+        else
+          ship.speedTime = SPEED_DURATION; // reinicia a 5s si ya estaba activo
         explode(p.x, p.y, 6);
       }
     }
@@ -579,6 +635,16 @@ function drawHUD() {
     ctx.strokeRect(bx, by, bw, bh);
   }
 
+  // Indicador de escudo: texto simple (sin barra)
+  if (state === 'playing' && ship && ship.shieldTime > 0) {
+    const remaining = Math.max(0, ship.shieldTime);
+    const y = (ship.speedTime > 0) ? 78 : 48;
+    ctx.textAlign = 'left';
+    ctx.fillStyle = SHIELD_COLOR;
+    ctx.font = '15px monospace';
+    ctx.fillText(`ESCUDO  ${remaining.toFixed(1)}s`, 14, y);
+  }
+
 }
 
 function drawOverlay(title, sub) {
@@ -634,6 +700,7 @@ if (typeof module !== 'undefined' && module.exports) {
     SHOOTING_STAR_COLOR, SHOOTING_STAR_RADIUS,
     SHOOTING_STAR_MIN_DELAY, SHOOTING_STAR_MAX_DELAY,
     SPEED_DURATION, SPEED_MULT, POWERUP_DROP_CHANCE, POWERUP_TTL,
+    SHIELD_DURATION, SHIELD_COLOR, SHIELD_RADIUS, SHIELD_DROP_CHANCE,
     wrap, dist, rand, randInt,
     Bullet, Asteroid, Ship, Particle, PowerUp,
     keys, justPressed, pressed,

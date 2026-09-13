@@ -234,4 +234,90 @@ describe('PowerUp velocidad', () => {
     p.update(game.POWERUP_TTL);
     assert.equal(p.dead, true);
   });
+
+  it('por defecto es de velocidad (retrocompatible)', () => {
+    const { game } = loadGameFresh();
+    assert.equal(new game.PowerUp(0, 0).kind, 'speed');
+  });
+});
+
+describe('PowerUp escudo', () => {
+  it('constantes: 8s, radio 20, color azul, drop 10% propio', () => {
+    const { game } = loadGameFresh();
+    assert.equal(game.SHIELD_DURATION, 8);
+    assert.equal(game.SHIELD_RADIUS, 20);
+    assert.equal(game.SHIELD_COLOR, '#4da6ff');
+    assert.equal(game.SHIELD_DROP_CHANCE, 0.10);
+  });
+
+  it('kind shield se conserva y comparte física del power-up', () => {
+    const { game } = loadGameFresh();
+    const p = new game.PowerUp(799, 300, 'shield');
+    assert.equal(p.kind, 'shield');
+    const speed = Math.hypot(p.vx, p.vy);
+    assert.ok(speed >= 15 && speed <= 35, `speed=${speed}`);
+    p.vx = 20; p.vy = 0;
+    p.update(0.1);
+    assert.ok(Math.abs(p.x - 1) < 1e-9);
+    p.update(game.POWERUP_TTL);
+    assert.equal(p.dead, true);
+  });
+
+  it('kind inválido cae a speed', () => {
+    const { game } = loadGameFresh();
+    assert.equal(new game.PowerUp(0, 0, 'invalido').kind, 'speed');
+  });
+});
+
+describe('Ship escudo', () => {
+  it('reset() inicia sin escudo', () => {
+    const { game } = loadGameFresh();
+    assert.equal(new game.Ship().shieldTime, 0);
+  });
+
+  it('shieldTime decrece con dt; muerta no decrece', () => {
+    const { game } = loadGameFresh();
+    game.initGame();
+    const ship = resetShipSafe(game);
+    ship.shieldTime = 8;
+    ship.update(1);
+    assert.ok(Math.abs(ship.shieldTime - 7) < 1e-9);
+    ship.dead = true;
+    ship.update(1);
+    assert.ok(Math.abs(ship.shieldTime - 7) < 1e-9);
+  });
+
+  it('anillo visible con shieldTime alto (sin parpadeo)', () => {
+    const { game, ctx } = loadGameFresh();
+    game.initGame();
+    const ship = resetShipSafe(game, { invincible: 0 });
+    ship.shieldTime = 5;
+    ctx.calls.length = 0;
+    ship.draw();
+    assert.ok(ctx.calls.some((c) => c.method === 'arc'), 'el anillo debe dibujarse');
+  });
+
+  it('anillo parpadea últimos 2s: OFF en 1.8s, ON en 1.9s', () => {
+    const { game, ctx } = loadGameFresh();
+    game.initGame();
+    const ship = resetShipSafe(game, { invincible: 0 });
+    ship.shieldTime = 1.8; // floor(14.4)=14 par → OFF
+    ctx.calls.length = 0;
+    ship.draw();
+    assert.ok(!ctx.calls.some((c) => c.method === 'arc'), 'en fase OFF el anillo no se dibuja');
+    ship.shieldTime = 1.9; // floor(15.2)=15 impar → ON
+    ctx.calls.length = 0;
+    ship.draw();
+    assert.ok(ctx.calls.some((c) => c.method === 'arc'), 'en fase ON el anillo se dibuja');
+  });
+
+  it('sin escudo no hay anillo', () => {
+    const { game, ctx } = loadGameFresh();
+    game.initGame();
+    const ship = resetShipSafe(game, { invincible: 0 });
+    ship.shieldTime = 0;
+    ctx.calls.length = 0;
+    ship.draw();
+    assert.ok(!ctx.calls.some((c) => c.method === 'arc'), 'sin escudo no hay anillo');
+  });
 });
